@@ -43,8 +43,8 @@
     height: 30px; box-sizing: border-box;
   }
   .sel:focus { outline: none; border-color: var(--accent); }
-  #file-select { min-width: 280px; max-width: 480px; }
   input[type=date].sel { color-scheme: dark; }
+  button.sel { cursor: pointer; }
   /* Grafana 风格时间选择器 */
   .time-picker { position: relative; }
   .tp-btn {
@@ -193,7 +193,8 @@
     <h1>体脂秤身体数据</h1>
     <div class="field">
       <span class="field-label">文件</span>
-      <select id="file-select" class="sel" title="切换数据文件"></select>
+      <button id="file-btn" class="sel" type="button" title="打开体脂秤 CSV">打开 CSV</button>
+      <input type="file" id="file-input" accept=".csv" hidden>
     </div>
     <div class="field">
       <span class="field-label">用户</span>
@@ -246,6 +247,130 @@ let DATA = null;
 let currentUser = null;    // 选中的用户 user_key,null 表示全部
 let pinned = new Set(loadPinned());  // 置顶到看板的指标 key 集合
 const charts = {};
+
+// 体脂秤指标定义: key/中文名/单位/量纲分组/是否仅完整测量才有
+const METRICS = [
+  {key:"weight",    name:"体重",       unit:"kg",   group:"质量 (kg)",  completeOnly:false},
+  {key:"swt",       name:"标准体重",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"bfm",       name:"脂肪量",     unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"ffm",       name:"去脂体重",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"slm",       name:"瘦体重",     unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"smm",       name:"骨骼肌量",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"bwm",       name:"体水分量",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"pm",        name:"蛋白量",     unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"bmc",       name:"骨盐量",     unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"mc",        name:"肌肉控制",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"wc",        name:"体重控制",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"fc",        name:"脂肪控制",   unit:"kg",   group:"质量 (kg)",  completeOnly:true},
+  {key:"bfp",       name:"体脂率",     unit:"%",    group:"比率 (%)",   completeOnly:true},
+  {key:"bwp",       name:"体水分率",   unit:"%",    group:"比率 (%)",   completeOnly:true},
+  {key:"pp",        name:"蛋白率",     unit:"%",    group:"比率 (%)",   completeOnly:true},
+  {key:"bmcp",      name:"骨盐量率",   unit:"%",    group:"比率 (%)",   completeOnly:true},
+  {key:"bmi",       name:"BMI",        unit:"",     group:"指数与等级", completeOnly:true},
+  {key:"vfl",       name:"内脏脂肪等级",unit:"",    group:"指数与等级", completeOnly:true},
+  {key:"whr",       name:"腰臀比",     unit:"",     group:"指数与等级", completeOnly:true},
+  {key:"sbc",       name:"身体得分",   unit:"",     group:"指数与等级", completeOnly:true},
+  {key:"heartRate", name:"心率",       unit:"bpm",  group:"其他",       completeOnly:true},
+  {key:"bmr",       name:"基础代谢率", unit:"kcal", group:"其他",       completeOnly:true},
+  {key:"ma",        name:"身体年龄",   unit:"岁",   group:"其他",       completeOnly:true},
+];
+
+// ===== CSV 解析(纯前端,无后端) =====
+function parseCsvLine(line) {
+  const out = []; let cur = '', inQ = false;
+  for (const c of line) {
+    if (c === '"') inQ = !inQ;
+    else if (c === ',' && !inQ) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+function toNum(v) {
+  if (v == null || v === '' || v === 'null') return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+function formatDate(ts) {
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const header = parseCsvLine(lines[0]);
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const row = {};
+    const cols = parseCsvLine(lines[i]);
+    header.forEach((h, j) => row[h] = cols[j]);
+    const ts = parseInt(row.time, 10);
+    if (isNaN(ts)) continue;
+    const weight = toNum(row.weight);
+    if (!weight || weight <= 0) continue;  // 跳过无效称重
+    const complete = (toNum(row.bfp) || 0) > 0;
+    const rec = {
+      date: formatDate(ts),
+      user_key: `${row.account_id || ''}_${row.duid || ''}`,
+      account_id: row.account_id || '', duid: row.duid || '', user_type: row.userType || '',
+    };
+    for (const m of METRICS) {
+      const v = toNum(row[m.key]);
+      rec[m.key] = (m.completeOnly && !complete) ? null : v;
+    }
+    records.push(rec);
+  }
+  records.sort((a, b) => a.date.localeCompare(b.date));
+  return records;
+}
+function buildPayload(records) {
+  const groups = {};
+  for (const m of METRICS) {
+    (groups[m.group] = groups[m.group] || []).push(
+      {key: m.key, name: m.name, unit: m.unit, complete_only: m.completeOnly});
+  }
+  const users = {};
+  for (const r of records) {
+    const u = users[r.user_key] = users[r.user_key] || {
+      user_key: r.user_key, duid: r.duid, user_type: r.user_type,
+      count: 0, weight_sum: 0, weight_n: 0,
+    };
+    u.count++; if (r.weight) { u.weight_sum += r.weight; u.weight_n++; }
+  }
+  const userList = Object.values(users).map(u => {
+    const mean = u.weight_n ? u.weight_sum / u.weight_n : 0;
+    const role = u.user_type === '1' ? '主人' : '成员';
+    return {
+      user_key: u.user_key, weight_mean: Math.round(mean * 10) / 10, count: u.count,
+      label: `成员 (槽位${u.duid}, ${role}, 均重${mean.toFixed(1)}kg, ${u.count}条)`,
+    };
+  }).sort((a, b) => a.label.localeCompare(b.label));
+  return {
+    generated_at: new Date().toLocaleString('zh-CN', {hour12: false}),
+    groups, users: userList, records,
+  };
+}
+function loadFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      setData(buildPayload(parseCsv(reader.result)));
+      document.getElementById('file-btn').textContent = file.name;
+    } catch (e) {
+      alert('解析失败: ' + e.message);
+    }
+  };
+  reader.readAsText(file);
+}
+function setData(payload) {
+  DATA = payload;
+  currentUser = null;
+  buildUserSelect();
+  mainPicker.setRecordsBounds(DATA.records);
+  render();
+  document.getElementById('footer').textContent =
+    `${DATA.records.length} 条记录 · ${DATA.users.length} 个用户档案 · 解析于 ${DATA.generated_at}`;
+}
 
 /* 公共时间选择器控件:底层只有自定义范围(start/end 日期),
    快捷范围只是快速预设 start/end 的快捷方式,统一走自定义入口。
@@ -389,10 +514,9 @@ function togglePinned(key) {
 }
 function getAllMetrics() { return Object.values(DATA.groups).flat(); }
 
-let currentFileId = null;
 let yMode = 'auto';  // 纵坐标起始点: auto=自动 / base=基准 / zero=0
 
-async function init() {
+function init() {
   document.getElementById('main-tp').appendChild(mainPicker.el);
   document.getElementById('modal-tp').appendChild(modalPicker.el);
   document.getElementById('yzero-select').addEventListener('change', (e) => {
@@ -400,47 +524,14 @@ async function init() {
     render();
     if (modalEl.classList.contains('open')) drawModal();
   });
-  await loadFiles();
-  await loadData();
-}
-
-async function loadFiles() {
-  const res = await fetch('/api/files');
-  const d = await res.json();
-  const sel = document.getElementById('file-select');
-  sel.innerHTML = '';
-  d.files.forEach(f => {
-    const o = document.createElement('option');
-    o.value = f.id;
-    o.textContent = f.name;
-    sel.appendChild(o);
+  document.getElementById('file-btn').addEventListener('click', () =>
+    document.getElementById('file-input').click());
+  document.getElementById('file-input').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) loadFromFile(f);
+    e.target.value = '';
   });
-  if (d.files.length === 0) {
-    sel.innerHTML = '<option>(无数据文件)</option>';
-    return;
-  }
-  if (!currentFileId || !d.files.some(f => f.id === currentFileId)) {
-    currentFileId = d.files[0].id;
-  }
-  sel.value = currentFileId;
-  sel.onchange = () => { currentFileId = sel.value; currentUser = null; loadData(); };
-}
-
-async function loadData() {
-  if (!currentFileId) return;
-  const res = await fetch('/api/data?file=' + encodeURIComponent(currentFileId));
-  DATA = await res.json();
-  if (DATA.error) {
-    alert('加载失败: ' + DATA.error);
-    return;
-  }
-  currentUser = null;  // 切换文件后重置用户选择
-  buildUserSelect();
-  // 切换文件后重置时间过滤为全部
-  mainPicker.setRecordsBounds(DATA.records);
-  render();
-  document.getElementById('footer').textContent =
-    `数据生成于 ${DATA.generated_at} · 数据源: 小米运动健康体脂秤导出 (model: xiaomi.scales.ms117)`;
+  document.getElementById('footer').textContent = '请点击「打开 CSV」加载体脂秤数据(数据仅在浏览器本地解析,不上传)';
 }
 
 function buildUserSelect() {
