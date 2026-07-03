@@ -1,11 +1,14 @@
 # Mi Fitness 体脂秤数据可视化
 
 读取小米运动健康(Mi Fitness)导出的体脂秤 CSV,用折线图可视化身体成分数据。
-纯 Python 标准库后端 + 单文件前端(Chart.js),无构建步骤、无第三方依赖。
+**纯静态单文件前端**(Chart.js),CSV 在浏览器本地解析,无后端、无构建、无第三方依赖。
+
+> 在线试用: <https://twt233.github.io/mifit-viewer/> — 打开后点「打开 CSV」选自己的体脂数据即可(数据仅在浏览器本地解析,不上传任何服务器)。
 
 ## 功能
 
-- **多文件管理**:启动时自动扫描 ` data/ ` 下的体脂秤 CSV(按表头识别,不依赖文件名),自动整理——CSV 提到 ` data/ ` 直接下、其余归档到 ` data/archive/ `
+- **纯静态**:单 ` index.html ` ,打开即用,可托管在 GitHub Pages
+- **本地解析**:CSV 经 FileReader 在浏览器本地解析,数据不离开本机
 - **多用户区分**:同一小米账号下体脂秤多个档案( ` account_id ` + ` duid ` )自动识别,下拉切换
 - **Grafana 风格时间选择器**:快捷档位(自动/周/双周/月/季/年)+ 自定义日期范围,主界面与大图各有独立实例
 - **按天聚合**:同一天多次测量取日均,无测量的天保留坐标位不画点
@@ -16,33 +19,30 @@
 
 ## 快速开始
 
-```bash
-# 1. 把体脂秤 CSV 放进 data/ (任意子目录均可,启动时会自动整理)
-mkdir -p data
-cp /path/to/*scale_record*.csv data/
-
-# 2. 启动
-python3 app.py
-# 默认 http://127.0.0.1:8000
-
-# 指定端口/目录
-python3 app.py --port 8765 --data-dir ./data
-```
-
-浏览器打开提示的地址即可。
+直接打开 ` index.html ` ,或访问上面的 GitHub Pages 链接,点「打开 CSV」选择从小米运动健康导出的 ` *scale_record.csv ` 即可。
 
 ## 数据来源
 
-小米运动健康 App → 设置 → 隐私 → 数据导出,解压后取 ` *scale_record.csv ` (生态链体脂秤数据)放入 ` data/ `。
+小米运动健康 App → 设置 → 隐私 → 数据导出,解压后取 ` *scale_record.csv ` (生态链体脂秤数据)。
 
 数据结构参考导出包内的 ` Mi_Fitness-Eco_data_copy_guide.pdf ` 。字段含义已对照手册核对并用数值交叉验证(如 ` bfm≈weight×bfp% ` 、` ffm=weight-bfm ` )。
 
+## 可选:本地数据整理工具
+
+` app.py ` 是可选的本地脚本,用于把散落的多个体脂秤 CSV 自动整理到 ` data/ ` 直接下、其余归档:
+
+```bash
+python3 app.py --port 8000   # 也可起本地服务预览
+```
+
+静态站点本身不需要它。
+
 ## 隐私
 
-` data/ ` 目录在 ` .gitignore ` 中,个人健康数据不会入库。本仓库只含代码( ` app.py ` + ` index.html ` )。
+` data/ ` 目录在 ` .gitignore ` 中,个人健康数据不会入库。本仓库只含代码( ` index.html ` + 可选 ` app.py ` )。
 
 ## 技术栈
 
-- 后端: Python 3 标准库( ` http.server ` ),无第三方依赖
 - 前端: 单 HTML 文件 + Chart.js 4 (CDN)
-- 时间选择器、tooltip、卡片网格均为原生 JS 实现
+- CSV 解析、时间选择器、tooltip、卡片网格均为原生 JS 实现
+
