@@ -23,7 +23,7 @@
 
 ## 数据来源
 
-小米运动健康 App → 设置 → 隐私 → 数据导出,解压后取 ` *scale_record.csv ` (生态链体脂秤数据)。
+小米官网(账号隐私数据导出)下载的体脂秤数据包,解压后取 ` *scale_record.csv ` (生态链体脂秤数据)。
 
 数据结构参考导出包内的 ` Mi_Fitness-Eco_data_copy_guide.pdf ` 。字段含义已对照手册核对并用数值交叉验证(如 ` bfm≈weight×bfp% ` 、` ffm=weight-bfm ` )。
 
