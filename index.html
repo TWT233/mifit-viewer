@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>体脂秤数据 · Mi Fitness Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel-2: #22262f;
+    --border: #2c313c;
+    --text: #e6e8ec;
+    --muted: #8b93a1;
+    --accent: #4ea1ff;
+    --orange: #e8a64a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Microsoft YaHei", sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    padding: 24px 32px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+  .toolbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+  }
+  .toolbar h1 { align-self: center; }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field-label { color: var(--muted); font-size: 12.5px; }
+  .sel {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 13px;
+    height: 30px; box-sizing: border-box;
+  }
+  .sel:focus { outline: none; border-color: var(--accent); }
+  #file-select { min-width: 280px; max-width: 480px; }
+  input[type=date].sel { color-scheme: dark; }
+  /* Grafana 风格时间选择器 */
+  .time-picker { position: relative; }
+  .tp-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 13px; cursor: pointer;
+  }
+  .tp-btn:hover { border-color: var(--accent); }
+  .tp-caret { color: var(--muted); font-size: 10px; }
+  .tp-popup {
+    display: none; position: fixed;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; z-index: 350;
+    min-width: 280px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  .tp-popup.open { display: block; }
+  .tp-section { margin-bottom: 14px; }
+  .tp-section:last-child { margin-bottom: 0; }
+  .tp-section-title { color: var(--muted); font-size: 11px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+  .tp-quick { display: flex; gap: 6px; }
+  .tp-quick button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 6px 8px; font-size: 12.5px; cursor: pointer; text-align: center; flex: 1;
+  }
+  .tp-quick button:hover { border-color: var(--accent); }
+  .tp-quick button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tp-custom { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+  .tp-dash { color: var(--muted); font-size: 12px; }
+  .tp-custom input[type=date] {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 5px 8px; font-size: 12.5px; color-scheme: dark; flex: 1; min-width: 0;
+  }
+  .tp-custom input[type=date]:focus { outline: none; border-color: var(--accent); }
+  /* 外部 HTML tooltip,避免 canvas 内中文小字压扁 */
+  #chartjs-tooltip {
+    position: fixed; pointer-events: none;
+    background: rgba(20,22,28,.95); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; z-index: 300;
+    opacity: 0; transition: opacity .1s;
+    transform: translate(-50%, calc(-100% - 12px));
+    white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  }
+  #chartjs-tooltip .tt-title { color: var(--muted); margin-bottom: 3px; font-size: 11px; }
+  #chartjs-tooltip .tt-line b { color: var(--accent); }
+  main { padding: 20px 32px 60px; }
+  .group {
+    margin-bottom: 28px;
+  }
+  .group h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 0 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 18px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px 10px;
+    cursor: zoom-in; transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .card .name { font-size: 14px; font-weight: 600; }
+  .card .unit { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .card .stats { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+  .card .stats b { color: var(--text); font-weight: 600; }
+  .card canvas { height: 150px !important; }
+  .pin {
+    background: transparent; border: 1px solid transparent; color: var(--muted);
+    cursor: pointer; font-size: 16px; padding: 1px 5px; border-radius: 5px; line-height: 1.2;
+  }
+  .pin:hover { color: var(--accent); border-color: var(--border); }
+  .pin.active { color: var(--orange); }
+  .footer { color: var(--muted); font-size: 12px; padding: 16px 32px; border-top: 1px solid var(--border); }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+
+  /* 置顶看板 */
+  .dashboard { padding: 20px 32px 0; }
+  .dashboard h2 { font-size: 15px; font-weight: 600; color: var(--orange); margin: 0 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .dashboard h2 .hint { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
+  .dashboard .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 18px; }
+  .card.dash canvas { height: 280px !important; }
+  .card.dash { border-color: var(--orange); }
+
+  /* 大图模态框 */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.65);
+    backdrop-filter: blur(3px);
+    z-index: 100;
+    align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 1000px;
+    max-height: calc(100vh - 64px);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .modal .head {
+    display: flex; justify-content: flex-start; align-items: center;
+    padding: 16px 20px; gap: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal .head .field { margin-left: auto; }
+  .modal .m-head-left { min-width: 0; }
+  .modal .head .title { font-size: 16px; font-weight: 600; }
+  .modal .head .title .unit { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .modal .head .stats { color: var(--muted); font-size: 12.5px; }
+  .modal .head .stats b { color: var(--text); font-weight: 600; }
+  .modal .close {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    margin-left: 16px; flex-shrink: 0;
+  }
+  .modal .close:hover { border-color: var(--accent); color: var(--accent); }
+  .modal .body { padding: 16px 20px 20px; overflow: auto; }
+  .modal canvas { height: 560px !important; max-height: calc(100vh - 220px); }
+</style>
+</head>
+<body>
+<header>
+  <div class="toolbar">
+    <h1>体脂秤身体数据</h1>
+    <div class="field">
+      <span class="field-label">文件</span>
+      <select id="file-select" class="sel" title="切换数据文件"></select>
+    </div>
+    <div class="field">
+      <span class="field-label">用户</span>
+      <select id="user-select" class="sel" title="切换用户档案"></select>
+    </div>
+    <div class="field">
+      <span class="field-label">时间</span>
+      <div id="main-tp"></div>
+    </div>
+    <div class="field">
+      <span class="field-label">纵轴</span>
+      <select id="yzero-select" class="sel" title="纵坐标起始点">
+        <option value="auto">自动</option>
+        <option value="base">基准</option>
+        <option value="zero">0</option>
+      </select>
+    </div>
+  </div>
+</header>
+<div class="dashboard" id="dashboard" style="display:none">
+  <h2>★ 我的看板<span class="hint">点击卡片右上角星星置顶/取消,选择持久保存</span></h2>
+  <div class="grid" id="dash-grid"></div>
+</div>
+<main id="main"></main>
+<div class="footer" id="footer"></div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="head">
+      <div class="m-head-left">
+        <div class="title" id="m-title">指标<span class="unit" id="m-unit"></span></div>
+        <div class="stats" id="m-stats"></div>
+      </div>
+      <div class="field">
+        <span class="field-label">时间</span>
+        <div id="modal-tp"></div>
+      </div>
+      <button class="close" id="m-close" title="关闭 (Esc)">✕</button>
+    </div>
+    <div class="body"><canvas id="m-canvas"></canvas></div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  line: '#4ea1ff', grid: '#2a2f3a', text: '#8b93a1', point: '#4ea1ff',
+  green: '#4caf94', orange: '#e8a64a', red: '#e85a5a'
+};
+let DATA = null;
+let currentUser = null;    // 选中的用户 user_key,null 表示全部
+let pinned = new Set(loadPinned());  // 置顶到看板的指标 key 集合
+const charts = {};
+
+/* 公共时间选择器控件:底层只有自定义范围(start/end 日期),
+   快捷范围只是快速预设 start/end 的快捷方式,统一走自定义入口。
+   onChange(state) 在状态变化时回调,state={start,end}。 */
+function createTimePicker(onChange) {
+  const state = { start: '', end: '' };
+  const el = document.createElement('div');
+  el.className = 'time-picker';
+  el.innerHTML = `
+    <button class="tp-btn" type="button">
+      <span class="tp-label">全部</span>
+      <span class="tp-caret">▾</span>
+    </button>
+    <div class="tp-popup">
+      <div class="tp-section">
+        <div class="tp-section-title">快捷范围</div>
+        <div class="tp-quick">
+          <button type="button" data-range="all">全部</button>
+          <button type="button" data-range="7">周</button>
+          <button type="button" data-range="14">双周</button>
+          <button type="button" data-range="30">月</button>
+          <button type="button" data-range="90">季</button>
+          <button type="button" data-range="365">年</button>
+        </div>
+      </div>
+      <div class="tp-section">
+        <div class="tp-section-title">自定义范围</div>
+        <div class="tp-custom">
+          <input type="date" class="tp-start">
+          <span class="tp-dash">—</span>
+          <input type="date" class="tp-end">
+        </div>
+      </div>
+    </div>`;
+  const btn = el.querySelector('.tp-btn');
+  const popup = el.querySelector('.tp-popup');
+  const labelEl = el.querySelector('.tp-label');
+  const startInput = el.querySelector('.tp-start');
+  const endInput = el.querySelector('.tp-end');
+  const quickBtns = el.querySelectorAll('.tp-quick button');
+  let bounds = null;  // 数据日期范围 {lo, hi}
+
+  function fmtDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  // 快捷范围 -> 具体日期区间 {start, end}
+  function rangeToDates(range) {
+    if (!bounds) return null;
+    if (range === 'all') return { start: bounds.lo, end: bounds.hi };
+    const days = parseInt(range, 10);
+    const end = new Date(bounds.hi + 'T00:00:00');
+    const start = new Date(end);
+    start.setDate(start.getDate() - (days - 1));
+    return { start: fmtDate(start), end: bounds.hi };
+  }
+  function applyRange(d) {
+    state.start = d.start; state.end = d.end;
+    startInput.value = d.start; endInput.value = d.end;
+    emit();
+  }
+
+  function updateLabel() {
+    if (bounds && state.start === bounds.lo && state.end === bounds.hi) {
+      labelEl.textContent = '全部';
+    } else if (state.start || state.end) {
+      const s = state.start ? state.start.slice(5) : '…';
+      const e = state.end ? state.end.slice(5) : '…';
+      labelEl.textContent = `${s} ~ ${e}`;
+    } else {
+      labelEl.textContent = '全部';
+    }
+  }
+  // 当 start/end 恰好等于某快捷范围时高亮该按钮
+  function updateQuickActive() {
+    quickBtns.forEach(b => {
+      const d = rangeToDates(b.dataset.range);
+      b.classList.toggle('active', !!(d && d.start === state.start && d.end === state.end));
+    });
+  }
+  function emit() { updateLabel(); updateQuickActive(); if (onChange) onChange(state); }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popup.classList.toggle('open');
+    if (popup.classList.contains('open')) positionPopup(popup, btn);
+  });
+  document.addEventListener('click', (e) => {
+    if (!popup.contains(e.target) && !btn.contains(e.target)) popup.classList.remove('open');
+  });
+  // 快捷范围:仅作为快速预设自定义范围的快捷方式
+  quickBtns.forEach(b => b.addEventListener('click', () => {
+    const d = rangeToDates(b.dataset.range);
+    if (!d) return;
+    popup.classList.remove('open');
+    applyRange(d);
+  }));
+  function onDateChange() {
+    state.start = startInput.value;
+    state.end = endInput.value;
+    emit();
+  }
+  startInput.addEventListener('change', onDateChange);
+  endInput.addEventListener('change', onDateChange);
+
+  updateLabel(); updateQuickActive();
+
+  return {
+    el,
+    getState: () => ({ start: state.start, end: state.end }),
+    setRecordsBounds: (records) => {
+      if (!records || !records.length) return;
+      const lo = records[0].date.slice(0, 10);
+      const hi = records[records.length - 1].date.slice(0, 10);
+      bounds = { lo, hi };
+      startInput.min = lo; startInput.max = hi;
+      endInput.min = lo; endInput.max = hi;
+      // 默认观察全部范围
+      state.start = lo; state.end = hi;
+      startInput.value = lo; endInput.value = hi;
+      updateLabel(); updateQuickActive();
+    },
+    close: () => popup.classList.remove('open'),
+  };
+}
+
+// 主界面与大图各一个时间选择器实例
+const mainPicker = createTimePicker(() => render());
+const modalPicker = createTimePicker(() => drawModal());
+
+function loadPinned() {
+  try { return JSON.parse(localStorage.getItem('mifit_pinned') || '[]'); }
+  catch (e) { return []; }
+}
+function savePinned() {
+  localStorage.setItem('mifit_pinned', JSON.stringify([...pinned]));
+}
+function togglePinned(key) {
+  if (pinned.has(key)) pinned.delete(key); else pinned.add(key);
+  savePinned();
+  render();
+}
+function getAllMetrics() { return Object.values(DATA.groups).flat(); }
+
+let currentFileId = null;
+let yMode = 'auto';  // 纵坐标起始点: auto=自动 / base=基准 / zero=0
+
+async function init() {
+  document.getElementById('main-tp').appendChild(mainPicker.el);
+  document.getElementById('modal-tp').appendChild(modalPicker.el);
+  document.getElementById('yzero-select').addEventListener('change', (e) => {
+    yMode = e.target.value;
+    render();
+    if (modalEl.classList.contains('open')) drawModal();
+  });
+  await loadFiles();
+  await loadData();
+}
+
+async function loadFiles() {
+  const res = await fetch('/api/files');
+  const d = await res.json();
+  const sel = document.getElementById('file-select');
+  sel.innerHTML = '';
+  d.files.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.id;
+    o.textContent = f.name;
+    sel.appendChild(o);
+  });
+  if (d.files.length === 0) {
+    sel.innerHTML = '<option>(无数据文件)</option>';
+    return;
+  }
+  if (!currentFileId || !d.files.some(f => f.id === currentFileId)) {
+    currentFileId = d.files[0].id;
+  }
+  sel.value = currentFileId;
+  sel.onchange = () => { currentFileId = sel.value; currentUser = null; loadData(); };
+}
+
+async function loadData() {
+  if (!currentFileId) return;
+  const res = await fetch('/api/data?file=' + encodeURIComponent(currentFileId));
+  DATA = await res.json();
+  if (DATA.error) {
+    alert('加载失败: ' + DATA.error);
+    return;
+  }
+  currentUser = null;  // 切换文件后重置用户选择
+  buildUserSelect();
+  // 切换文件后重置时间过滤为全部
+  mainPicker.setRecordsBounds(DATA.records);
+  render();
+  document.getElementById('footer').textContent =
+    `数据生成于 ${DATA.generated_at} · 数据源: 小米运动健康体脂秤导出 (model: xiaomi.scales.ms117)`;
+}
+
+function buildUserSelect() {
+  const sel = document.getElementById('user-select');
+  sel.innerHTML = '';
+  // 默认选中第一个用户(主用户),避免多人混叠
+  if (currentUser === null && DATA.users.length) currentUser = DATA.users[0].user_key;
+  DATA.users.forEach(u => {
+    const o = document.createElement('option');
+    o.value = u.user_key;
+    o.textContent = `${u.weight_mean}kg · ${u.count}条`;
+    o.title = u.label;
+    sel.appendChild(o);
+  });
+  sel.value = currentUser || '';
+  sel.onchange = () => { currentUser = sel.value; render(); };
+}
+
+// 弹出面板定位:fixed 定位,按按钮位置放置,溢出视口右侧时左移
+function positionPopup(popup, btn) {
+  const br = btn.getBoundingClientRect();
+  popup.style.left = '0px';
+  popup.style.top = '0px';
+  const pw = popup.offsetWidth;
+  let left = br.left;
+  if (left + pw > window.innerWidth - 8) left = br.right - pw;  // 右溢出则右对齐
+  if (left < 8) left = 8;
+  popup.style.left = left + 'px';
+  popup.style.top = (br.bottom + 6) + 'px';
+}
+
+// 按时间范围过滤记录(start/end 为 YYYY-MM-DD)
+function filterByRange(records, start, end) {
+  let recs = records;
+  if (start) recs = recs.filter(r => r.date.slice(0, 10) >= start);
+  if (end) recs = recs.filter(r => r.date.slice(0, 10) <= end);
+  return recs;
+}
+
+function filteredRecords() {
+  let recs = currentUser !== null
+    ? DATA.records.filter(r => r.user_key === currentUser)
+    : DATA.records;
+  const s = mainPicker.getState();
+  return filterByRange(recs, s.start, s.end);
+}
+
+// 统计行 HTML:最新/区间/变化,可选测量天数
+function statsHtml(stats, withCount) {
+  let h = `最新 <b>${fmt(stats.last)}</b> · 区间 <b>${fmt(stats.min)}~${fmt(stats.max)}</b>${stats.deltaTxt(fmt)}`;
+  if (withCount) h += ` · 测量天数 <b>${stats.count}</b>`;
+  return h;
+}
+
+function render() {
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  // 销毁旧图表
+  Object.values(charts).forEach(c => c && c.destroy());
+  for (const k in charts) delete charts[k];
+
+  const records = filteredRecords();
+  if (!records.length) {
+    main.innerHTML = '<div class="empty">该时间范围内无数据</div>';
+    return;
+  }
+
+  // 置顶看板:按原始指标顺序渲染已置顶项
+  const dashEl = document.getElementById('dashboard');
+  const dashGrid = document.getElementById('dash-grid');
+  dashGrid.innerHTML = '';
+  const pinnedMetrics = getAllMetrics().filter(m => pinned.has(m.key));
+  if (pinnedMetrics.length) {
+    dashEl.style.display = '';
+    pinnedMetrics.forEach(m => dashGrid.appendChild(buildCard(m, records, {pinned: true})));
+  } else {
+    dashEl.style.display = 'none';
+  }
+
+  // 按量纲分组展示
+  for (const [groupName, metrics] of Object.entries(DATA.groups)) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    group.innerHTML = `<h2>${groupName}</h2><div class="grid"></div>`;
+    const grid = group.querySelector('.grid');
+    metrics.forEach(metric => {
+      grid.appendChild(buildCard(metric, records));
+    });
+    main.appendChild(group);
+  }
+}
+
+function buildCard(metric, records, opts = {}) {
+  const card = document.createElement('div');
+  card.className = 'card' + (opts.pinned ? ' dash' : '');
+
+  const pairs = aggregateByDay(metric, records);
+  const stats = computeStats(pairs);
+  const isPinned = pinned.has(metric.key);
+
+  card.innerHTML = `
+    <div class="head">
+      <span class="name">${metric.name}<span class="unit">${metric.unit ? ' ' + metric.unit : ''}</span></span>
+      <button class="pin${isPinned ? ' active' : ''}" title="${isPinned ? '取消置顶' : '置顶到看板'}">${isPinned ? '★' : '☆'}</button>
+    </div>
+    <div class="stats">${statsHtml(stats)}</div>
+    <canvas></canvas>`;
+  const ctx = card.querySelector('canvas');
+  // 看板卡片与分组卡片用不同 key,避免同指标两个 Chart 实例冲突
+  const chartKey = (opts.pinned ? 'dash:' : 'grp:') + metric.key;
+  charts[chartKey] = makeChart(ctx, metric, pairs, false);
+
+  card.querySelector('.pin').addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePinned(metric.key);
+  });
+  card.addEventListener('click', () => openModal(metric));
+  return card;
+}
+
+function computeStats(pairs) {
+  const valid = pairs.map(p => p.v).filter(v => v !== null && v !== undefined);
+  const last = valid.length ? valid[valid.length - 1] : null;
+  const min = valid.length ? Math.min(...valid) : null;
+  const max = valid.length ? Math.max(...valid) : null;
+  const delta = (valid.length >= 2) ? (last - valid[0]) : null;
+  const deltaTxt = (fmt) => delta === null ? '' :
+    ` · 变化 <b style="color:${delta>0?COLORS.red:delta<0?COLORS.green:COLORS.text}">${delta>0?'+':''}${fmt(delta)}</b>`;
+  return { last, min, max, delta, deltaTxt, count: valid.length };
+}
+
+// 按天聚合:同一天多次测量取平均。横坐标保留完整日期范围内每一天,
+// 无测量的天 v=null(不绘制数据点,折线 spanGaps 跨过)。
+function aggregateByDay(metric, records) {
+  const byDay = new Map();
+  records.forEach(r => {
+    const v = r[metric.key];
+    if (v === null || v === undefined) return;
+    const dayKey = r.date.slice(0, 10);
+    let e = byDay.get(dayKey);
+    if (!e) { e = { sum: 0, n: 0 }; byDay.set(dayKey, e); }
+    e.sum += v; e.n++;
+  });
+  return buildAllDays(records).map(dk => {
+    const e = byDay.get(dk);
+    return { d: dk.slice(5), v: e ? e.sum / e.n : null };
+  });
+}
+
+// 生成从最早到最晚测量日的完整日期列表 (YYYY-MM-DD),逐日填充
+function buildAllDays(records) {
+  if (!records.length) return [];
+  const start = records[0].date.slice(0, 10);
+  const end = records[records.length - 1].date.slice(0, 10);
+  const days = [];
+  const cur = new Date(start + 'T00:00:00');
+  const endD = new Date(end + 'T00:00:00');
+  while (cur <= endD) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    days.push(`${y}-${m}-${d}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
+function fmt(v) {
+  if (v === null || v === undefined) return '-';
+  return Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(Math.abs(v) < 10 ? 2 : 1);
+}
+
+// 把数值向下圆整到漂亮刻度 (1/2/5 × 10^n),作为 y 轴基准下限
+function niceFloor(v) {
+  if (v <= 0) return 0;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / mag;
+  const nice = n >= 5 ? 5 : n >= 2 ? 2 : 1;
+  return nice * mag;
+}
+
+function makeChart(ctx, metric, pairs, large) {
+  const chartLabels = pairs.map(p => p.d);
+  const values = pairs.map(p => p.v);
+  const validVals = values.filter(v => v !== null && v !== undefined);
+  const vmin = validVals.length ? Math.min(...validVals) : 0;
+
+  const isControl = metric.key === 'wc' || metric.key === 'fc' || metric.key === 'mc';
+  const color = isControl ? COLORS.orange : COLORS.line;
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        data: values,
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 2,
+        pointRadius: large ? 4 : 2.5,
+        pointHoverRadius: large ? 7 : 5,
+        pointBackgroundColor: color,
+        tension: 0.3,
+        fill: !isControl,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      hover: { animationDuration: 0 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: false,  // 改用外部 HTML tooltip,避免 canvas 内中文小字压扁
+          external: externalTooltipHandler,
+          callbacks: {
+            label: (c) => {
+              const v = c.parsed.y;
+              return v === null ? '无数据' : `${fmt(v)}${metric.unit ? ' ' + metric.unit : ''}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: COLORS.text, maxTicksLimit: large ? 12 : 6, font: { size: large ? 11 : 10 }, maxRotation: 45, autoSkip: true },
+          grid: { color: COLORS.grid }
+        },
+        y: {
+          beginAtZero: yMode === 'zero',
+          suggestedMin: (yMode === 'base' && vmin > 0) ? niceFloor(vmin) : undefined,
+          ticks: { color: COLORS.text, font: { size: large ? 11 : 10 },
+                   callback: (v) => fmt(v) },
+          grid: { color: COLORS.grid }
+        }
+      },
+      interaction: { mode: 'index', intersect: false }
+    }
+  });
+}
+
+// 外部 HTML tooltip:用 DOM 渲染,字体清晰不变形
+const tooltipEl = document.createElement('div');
+tooltipEl.id = 'chartjs-tooltip';
+document.body.appendChild(tooltipEl);
+
+function externalTooltipHandler(context) {
+  const { chart, tooltip } = context;
+  if (!tooltip || tooltip.opacity === 0) { tooltipEl.style.opacity = 0; return; }
+  if (tooltip.body) {
+    const title = tooltip.title || [];
+    let html = '';
+    if (title.length) html += `<div class="tt-title">${title[0]}</div>`;
+    tooltip.body.forEach(b => {
+      b.lines.forEach(l => { html += `<div class="tt-line"><b>${l}</b></div>`; });
+    });
+    tooltipEl.innerHTML = html;
+  }
+  const rect = chart.canvas.getBoundingClientRect();
+  let left = rect.left + tooltip.caretX;
+  // 防止超出视口右边
+  const w = tooltipEl.offsetWidth || 120;
+  left = Math.min(left, window.innerWidth - w / 2 - 8);
+  left = Math.max(left, w / 2 + 8);
+  tooltipEl.style.opacity = 1;
+  tooltipEl.style.left = left + 'px';
+  tooltipEl.style.top = rect.top + tooltip.caretY + 'px';
+}
+
+/* ===== 大图模态框 ===== */
+let modalChart = null;
+const modalEl = document.getElementById('modal');
+const modalCanvas = document.getElementById('m-canvas');
+let modalMetric = null;
+let modalRecords = [];
+
+function openModal(metric) {
+  modalMetric = metric;
+  // 大图基于当前用户的全部记录(不受主时间过滤限制,便于自由探索)
+  modalRecords = (currentUser !== null)
+    ? DATA.records.filter(r => r.user_key === currentUser)
+    : DATA.records;
+  modalPicker.setRecordsBounds(modalRecords);
+  document.getElementById('m-title').firstChild.textContent = metric.name;
+  document.getElementById('m-unit').textContent = metric.unit ? `(${metric.unit})` : '';
+  if (modalChart) { modalChart.destroy(); modalChart = null; }
+  modalEl.classList.add('open');
+  requestAnimationFrame(drawModal);
+}
+
+// 按大图时间范围过滤+聚合+重画
+function drawModal() {
+  const s = modalPicker.getState();
+  const recs = filterByRange(modalRecords, s.start, s.end);
+  const pairs = aggregateByDay(modalMetric, recs);
+  const stats = computeStats(pairs);
+  document.getElementById('m-stats').innerHTML = statsHtml(stats, true);
+  if (modalChart) modalChart.destroy();
+  modalChart = makeChart(modalCanvas, modalMetric, pairs, true);
+}
+
+function closeModal() {
+  modalEl.classList.remove('open');
+  modalPicker.close();
+  if (modalChart) { modalChart.destroy(); modalChart = null; }
+}
+
+document.getElementById('m-close').addEventListener('click', closeModal);
+modalEl.addEventListener('click', (e) => { if (e.target === modalEl) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalEl.classList.contains('open')) closeModal();
+});
+
+init();
+</script>
+</body>
+</html>
