@@ -1,6 +1,6 @@
 # Mi Fitness 体脂秤数据可视化
 
-读取小米运动健康(Mi Fitness)导出的体脂秤 CSV,用折线图可视化身体成分数据。
+读取小米官网导出的体脂秤 CSV,用折线图可视化身体成分数据。
 **纯静态单文件前端**(Chart.js),CSV 在浏览器本地解析,无后端、无构建、无第三方依赖。
 
 > 在线试用: <https://twt233.github.io/mifit-viewer/> — 打开后点「打开 CSV」选自己的体脂数据即可(数据仅在浏览器本地解析,不上传任何服务器)。
@@ -19,7 +19,7 @@
 
 ## 快速开始
 
-直接打开 ` index.html ` ,或访问上面的 GitHub Pages 链接,点「打开 CSV」选择从小米运动健康导出的 ` *scale_record.csv ` 即可。
+直接打开 ` index.html ` ,或访问上面的 GitHub Pages 链接,点「打开 CSV」选择从小米官网导出的 ` *scale_record.csv ` 即可。
 
 ## 数据来源
 
