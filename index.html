@@ -133,6 +133,11 @@
   }
   .pin:hover { color: var(--accent); border-color: var(--border); }
   .pin.active { color: var(--orange); }
+  .ord {
+    background: transparent; border: 1px solid transparent; color: var(--muted);
+    cursor: pointer; font-size: 13px; padding: 1px 5px; border-radius: 5px; line-height: 1.2;
+  }
+  .ord:hover { color: var(--accent); border-color: var(--border); }
   .footer { color: var(--muted); font-size: 12px; padding: 16px 32px; border-top: 1px solid var(--border); }
   .empty { color: var(--muted); padding: 40px; text-align: center; }
 
@@ -245,7 +250,7 @@ const COLORS = {
 };
 let DATA = null;
 let currentUser = null;    // 选中的用户 user_key,null 表示全部
-let pinned = new Set(loadPinned());  // 置顶到看板的指标 key 集合
+let pinned = loadPinned();  // 置顶到看板的指标 key 有序数组
 const charts = {};
 
 // 体脂秤指标定义: key/中文名/单位/量纲分组/是否仅完整测量才有
@@ -505,10 +510,21 @@ function loadPinned() {
   catch (e) { return []; }
 }
 function savePinned() {
-  localStorage.setItem('mifit_pinned', JSON.stringify([...pinned]));
+  localStorage.setItem('mifit_pinned', JSON.stringify(pinned));
 }
 function togglePinned(key) {
-  if (pinned.has(key)) pinned.delete(key); else pinned.add(key);
+  const i = pinned.indexOf(key);
+  if (i >= 0) pinned.splice(i, 1);
+  else pinned.push(key);
+  savePinned();
+  render();
+}
+// 看板内移动收藏项顺序: dir=-1 上移, +1 下移
+function movePinned(key, dir) {
+  const i = pinned.indexOf(key);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= pinned.length) return;
+  [pinned[i], pinned[j]] = [pinned[j], pinned[i]];
   savePinned();
   render();
 }
@@ -603,7 +619,7 @@ function render() {
   const dashEl = document.getElementById('dashboard');
   const dashGrid = document.getElementById('dash-grid');
   dashGrid.innerHTML = '';
-  const pinnedMetrics = getAllMetrics().filter(m => pinned.has(m.key));
+  const pinnedMetrics = pinned.map(k => getAllMetrics().find(m => m.key === k)).filter(Boolean);
   if (pinnedMetrics.length) {
     dashEl.style.display = '';
     pinnedMetrics.forEach(m => dashGrid.appendChild(buildCard(m, records, {pinned: true})));
@@ -630,12 +646,15 @@ function buildCard(metric, records, opts = {}) {
 
   const pairs = aggregateByDay(metric, records);
   const stats = computeStats(pairs);
-  const isPinned = pinned.has(metric.key);
+  const isPinned = pinned.includes(metric.key);
 
   card.innerHTML = `
     <div class="head">
       <span class="name">${metric.name}<span class="unit">${metric.unit ? ' ' + metric.unit : ''}</span></span>
       <button class="pin${isPinned ? ' active' : ''}" title="${isPinned ? '取消置顶' : '置顶到看板'}">${isPinned ? '★' : '☆'}</button>
+      ${opts.pinned ? `
+        <button class="ord" data-dir="-1" title="上移">↑</button>
+        <button class="ord" data-dir="1" title="下移">↓</button>` : ''}
     </div>
     <div class="stats">${statsHtml(stats)}</div>
     <canvas></canvas>`;
@@ -648,6 +667,10 @@ function buildCard(metric, records, opts = {}) {
     e.stopPropagation();
     togglePinned(metric.key);
   });
+  card.querySelectorAll('.ord').forEach(b => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    movePinned(metric.key, parseInt(b.dataset.dir, 10));
+  }));
   card.addEventListener('click', () => openModal(metric));
   return card;
 }
