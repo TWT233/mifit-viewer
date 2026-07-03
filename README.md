@@ -27,19 +27,17 @@
 
 数据结构参考导出包内的 ` Mi_Fitness-Eco_data_copy_guide.pdf ` 。字段含义已对照手册核对并用数值交叉验证(如 ` bfm≈weight×bfp% ` 、` ffm=weight-bfm ` )。
 
-## 可选:本地数据整理工具
+## 本地预览
 
-` app.py ` 是可选的本地脚本,用于把散落的多个体脂秤 CSV 自动整理到 ` data/ ` 直接下、其余归档:
+直接双击 ` index.html ` 打开,或起个静态服务:
 
 ```bash
-python3 app.py --port 8000   # 也可起本地服务预览
+python3 -m http.server 8000   # 浏览器访问 http://localhost:8000
 ```
-
-静态站点本身不需要它。
 
 ## 隐私
 
-` data/ ` 目录在 ` .gitignore ` 中,个人健康数据不会入库。本仓库只含代码( ` index.html ` + 可选 ` app.py ` )。
+` data/ ` 目录在 ` .gitignore ` 中,个人健康数据不会入库。本仓库只含 ` index.html ` 。
 
 ## 技术栈
 
