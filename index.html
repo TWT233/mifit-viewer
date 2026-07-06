@@ -122,6 +122,7 @@
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 6px;
   }
+  .head-right { display: flex; align-items: center; gap: 2px; }
   .card .name { font-size: 14px; font-weight: 600; }
   .card .unit { color: var(--muted); font-size: 12px; font-weight: 400; }
   .card .stats { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
@@ -149,7 +150,7 @@
   .card.dash canvas { height: 280px !important; }
   .card.dash { border-color: var(--orange); }
 
-  /* 大图模态框 */
+  /* 模态框 */
   .modal-overlay {
     display: none;
     position: fixed; inset: 0;
@@ -175,7 +176,6 @@
     padding: 16px 20px; gap: 16px;
     border-bottom: 1px solid var(--border);
   }
-  .modal .head .field { margin-left: auto; }
   .modal .m-head-left { min-width: 0; }
   .modal .head .title { font-size: 16px; font-weight: 600; }
   .modal .head .title .unit { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
@@ -188,8 +188,19 @@
     margin-left: 16px; flex-shrink: 0;
   }
   .modal .close:hover { border-color: var(--accent); color: var(--accent); }
+  .modal-middle { margin-left: auto; }
   .modal .body { padding: 16px 20px 20px; overflow: auto; }
   .modal canvas { height: 560px !important; max-height: calc(100vh - 220px); }
+  #tm-text {
+    width: 100%; height: calc(100vh - 240px); min-height: 320px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.5; resize: none;
+  }
+  #tm-text:focus { outline: none; border-color: var(--accent); }
+  .tm-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .tm-actions .sel { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -213,9 +224,12 @@
       <span class="field-label">纵轴</span>
       <select id="yzero-select" class="sel" title="纵坐标起始点">
         <option value="auto">自动</option>
-        <option value="base">基准</option>
+        <option value="pad">留白</option>
         <option value="zero">0</option>
       </select>
+    </div>
+    <div class="field">
+      <button id="export-btn" class="sel" type="button" title="导出 Markdown 给 LLM 分析">导出 LLM</button>
     </div>
   </div>
 </header>
@@ -225,23 +239,6 @@
 </div>
 <main id="main"></main>
 <div class="footer" id="footer"></div>
-
-<div class="modal-overlay" id="modal">
-  <div class="modal">
-    <div class="head">
-      <div class="m-head-left">
-        <div class="title" id="m-title">指标<span class="unit" id="m-unit"></span></div>
-        <div class="stats" id="m-stats"></div>
-      </div>
-      <div class="field">
-        <span class="field-label">时间</span>
-        <div id="modal-tp"></div>
-      </div>
-      <button class="close" id="m-close" title="关闭 (Esc)">✕</button>
-    </div>
-    <div class="body"><canvas id="m-canvas"></canvas></div>
-  </div>
-</div>
 
 <script>
 const COLORS = {
@@ -355,12 +352,57 @@ function buildPayload(records) {
     groups, users: userList, records,
   };
 }
-function loadFromFile(file) {
+// 文件句柄持久化(File System Access API,Chromium 系支持;其他浏览器降级为普通选文件)
+const IDB = {
+  get(k){return new Promise(res=>{const r=indexedDB.open('mifit',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>{const t=r.result.transaction('kv','readonly').objectStore('kv').get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>res(null);};r.onerror=()=>res(null);});},
+  set(k,v){return new Promise(res=>{const r=indexedDB.open('mifit',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>{const tx=r.result.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>res();};r.onerror=()=>res();});},
+  del(k){return new Promise(res=>{const r=indexedDB.open('mifit',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>{const tx=r.result.transaction('kv','readwrite');tx.objectStore('kv').delete(k);tx.oncomplete=()=>res();tx.onerror=()=>res();};r.onerror=()=>res();});},
+};
+let lastHandle = null;
+async function clearLastFile() {
+  lastHandle = null;
+  await IDB.del('fileHandle');
+  localStorage.removeItem('mifit_file_name');
+  document.getElementById('file-btn').textContent = '打开 CSV';
+}
+async function loadFromHandle(handle) {
+  try {
+    const file = await handle.getFile();  // 文件被删/移动会抛错
+    loadFromFile(file, handle);
+  } catch (e) {
+    await clearLastFile();  // 路径失效,清空保存
+  }
+}
+async function onFileBtnClick() {
+  // 优先尝试恢复上次文件(需用户手势触发 requestPermission)
+  if (lastHandle) {
+    try {
+      if (await lastHandle.requestPermission({mode:'read'}) === 'granted') {
+        await loadFromHandle(lastHandle); return;
+      }
+    } catch(e) { await clearLastFile(); }
+  }
+  // File System Access API 选文件并保存句柄
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{description:'CSV', accept:{'text/csv':['.csv']}}]});
+      await loadFromHandle(handle); return;
+    } catch(e) { return; }  // 用户取消
+  }
+  document.getElementById('file-input').click();  // 降级:普通 input(无持久化)
+}
+function loadFromFile(file, handle) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
       setData(buildPayload(parseCsv(reader.result)));
       document.getElementById('file-btn').textContent = file.name;
+      if (handle) {
+        lastHandle = handle;
+        IDB.set('fileHandle', handle);
+        localStorage.setItem('mifit_file_name', file.name);
+      }
     } catch (e) {
       alert('解析失败: ' + e.message);
     }
@@ -530,24 +572,88 @@ function movePinned(key, dir) {
 }
 function getAllMetrics() { return Object.values(DATA.groups).flat(); }
 
-let yMode = 'auto';  // 纵坐标起始点: auto=自动 / base=基准 / zero=0
+let yMode = 'auto';  // 纵坐标起始点: auto=自动 / pad=留白 / zero=0
 
-function init() {
+async function init() {
   document.getElementById('main-tp').appendChild(mainPicker.el);
-  document.getElementById('modal-tp').appendChild(modalPicker.el);
   document.getElementById('yzero-select').addEventListener('change', (e) => {
     yMode = e.target.value;
     render();
-    if (modalEl.classList.contains('open')) drawModal();
+    if (chartModal.isOpen()) drawModal();
   });
-  document.getElementById('file-btn').addEventListener('click', () =>
-    document.getElementById('file-input').click());
+  document.getElementById('file-btn').addEventListener('click', onFileBtnClick);
   document.getElementById('file-input').addEventListener('change', (e) => {
     const f = e.target.files[0];
     if (f) loadFromFile(f);
     e.target.value = '';
   });
+  document.getElementById('export-btn').addEventListener('click', exportLLM);
+  // 恢复上次文件:同会话刷新可自动加载,跨会话需点按钮授权
+  lastHandle = await IDB.get('fileHandle');
+  if (lastHandle) {
+    const name = localStorage.getItem('mifit_file_name');
+    if (name) document.getElementById('file-btn').textContent = '恢复 ' + name;
+    try {
+      if (await lastHandle.queryPermission({mode:'read'}) === 'granted') {
+        await loadFromHandle(lastHandle);
+      }
+    } catch(e) { await clearLastFile(); }
+  }
   document.getElementById('footer').textContent = '请点击「打开 CSV」加载体脂秤数据(数据仅在浏览器本地解析,不上传)';
+}
+
+// ===== 导出 Markdown 给 LLM 分析 =====
+// 按天聚合所有指标,按用户/量纲分表,附字段字典
+function aggregateAllByDay(records) {
+  const byDay = {};
+  for (const r of records) {
+    const dk = r.date.slice(0, 10);
+    const d = byDay[dk] = byDay[dk] || {sum: {}, n: {}};
+    for (const m of METRICS) {
+      const v = r[m.key];
+      if (v != null) {
+        d.sum[m.key] = (d.sum[m.key] || 0) + v;
+        d.n[m.key] = (d.n[m.key] || 0) + 1;
+      }
+    }
+  }
+  return Object.keys(byDay).sort().map(dk => {
+    const d = byDay[dk], row = {date: dk};
+    for (const m of METRICS) row[m.key] = d.n[m.key] ? d.sum[m.key] / d.n[m.key] : null;
+    return row;
+  });
+}
+function exportLLM() {
+  if (!DATA) { alert('请先打开 CSV'); return; }
+  const records = filteredRecords();
+  if (!records.length) { alert('当前筛选无数据'); return; }
+  const byUser = {};
+  for (const r of records) (byUser[r.user_key] = byUser[r.user_key] || []).push(r);
+
+  let md = '# 体脂秤数据分析\n\n';
+  md += `- 数据范围: ${records[0].date.slice(0,10)} ~ ${records[records.length-1].date.slice(0,10)}\n`;
+  md += `- 用户数: ${Object.keys(byUser).length}  ·  原始记录: ${records.length} 条\n`;
+  md += `- 数据按天聚合(同一天多次测量取日均),无测量的天该格为空\n\n`;
+
+  md += '## 字段说明\n\n| key | 名称 | 单位 | 分组 |\n|---|---|---|---|\n';
+  for (const m of METRICS) md += `| ${m.key} | ${m.name} | ${m.unit || '-'} | ${m.group} |\n`;
+  md += '\n';
+
+  for (const [uk, recs] of Object.entries(byUser)) {
+    const u = DATA.users.find(x => x.user_key === uk);
+    md += `## ${u ? u.label : uk}\n\n`;
+    const daily = aggregateAllByDay(recs);
+    for (const groupName of Object.keys(DATA.groups)) {
+      const ms = METRICS.filter(m => m.group === groupName);
+      md += `### ${groupName}\n\n| 日期 |${ms.map(m => m.name).join('|')}|\n|---|${ms.map(()=>'---').join('|')}|\n`;
+      for (const row of daily) {
+        md += `| ${row.date} |${ms.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
+      }
+      md += '\n';
+    }
+  }
+  document.getElementById('tm-text').value = md;
+  textModal.open();
 }
 
 function buildUserSelect() {
@@ -644,17 +750,18 @@ function buildCard(metric, records, opts = {}) {
   const card = document.createElement('div');
   card.className = 'card' + (opts.pinned ? ' dash' : '');
 
-  const pairs = aggregateByDay(metric, records);
-  const stats = computeStats(pairs);
+  const {pairs, stats} = computeSeries(metric, records);
   const isPinned = pinned.includes(metric.key);
 
   card.innerHTML = `
     <div class="head">
       <span class="name">${metric.name}<span class="unit">${metric.unit ? ' ' + metric.unit : ''}</span></span>
-      <button class="pin${isPinned ? ' active' : ''}" title="${isPinned ? '取消置顶' : '置顶到看板'}">${isPinned ? '★' : '☆'}</button>
-      ${opts.pinned ? `
-        <button class="ord" data-dir="-1" title="上移">↑</button>
-        <button class="ord" data-dir="1" title="下移">↓</button>` : ''}
+      <div class="head-right">
+        ${opts.pinned ? `
+          <button class="ord" data-dir="-1" title="上移">↑</button>
+          <button class="ord" data-dir="1" title="下移">↓</button>` : ''}
+        <button class="pin${isPinned ? ' active' : ''}" title="${isPinned ? '取消置顶' : '置顶到看板'}">${isPinned ? '★' : '☆'}</button>
+      </div>
     </div>
     <div class="stats">${statsHtml(stats)}</div>
     <canvas></canvas>`;
@@ -684,6 +791,11 @@ function computeStats(pairs) {
   const deltaTxt = (fmt) => delta === null ? '' :
     ` · 变化 <b style="color:${delta>0?COLORS.red:delta<0?COLORS.green:COLORS.text}">${delta>0?'+':''}${fmt(delta)}</b>`;
   return { last, min, max, delta, deltaTxt, count: valid.length };
+}
+// 统一 series 计算:按天聚合 + 统计摘要,小图/看板/大图共用
+function computeSeries(metric, records) {
+  const pairs = aggregateByDay(metric, records);
+  return { pairs, stats: computeStats(pairs) };
 }
 
 // 按天聚合:同一天多次测量取平均。横坐标保留完整日期范围内每一天,
@@ -727,23 +839,15 @@ function fmt(v) {
   return Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(Math.abs(v) < 10 ? 2 : 1);
 }
 
-// 把数值向下圆整到漂亮刻度 (1/2/5 × 10^n),作为 y 轴基准下限
-function niceFloor(v) {
-  if (v <= 0) return 0;
-  const mag = Math.pow(10, Math.floor(Math.log10(v)));
-  const n = v / mag;
-  const nice = n >= 5 ? 5 : n >= 2 ? 2 : 1;
-  return nice * mag;
-}
-
 function makeChart(ctx, metric, pairs, large) {
   const chartLabels = pairs.map(p => p.d);
   const values = pairs.map(p => p.v);
   const validVals = values.filter(v => v !== null && v !== undefined);
   const vmin = validVals.length ? Math.min(...validVals) : 0;
+  const vmax = validVals.length ? Math.max(...validVals) : 0;
+  const vrange = vmax - vmin;
 
-  const isControl = metric.key === 'wc' || metric.key === 'fc' || metric.key === 'mc';
-  const color = isControl ? COLORS.orange : COLORS.line;
+  const color = COLORS.line;
 
   return new Chart(ctx, {
     type: 'line',
@@ -758,7 +862,7 @@ function makeChart(ctx, metric, pairs, large) {
         pointHoverRadius: large ? 7 : 5,
         pointBackgroundColor: color,
         tension: 0.3,
-        fill: !isControl,
+        fill: true,
         spanGaps: true,
       }]
     },
@@ -787,7 +891,8 @@ function makeChart(ctx, metric, pairs, large) {
         },
         y: {
           beginAtZero: yMode === 'zero',
-          suggestedMin: (yMode === 'base' && vmin > 0) ? niceFloor(vmin) : undefined,
+          suggestedMin: (yMode === 'pad' && vrange > 0) ? vmin - vrange * 0.1 : undefined,
+          suggestedMax: (yMode === 'pad' && vrange > 0) ? vmax + vrange * 0.1 : undefined,
           ticks: { color: COLORS.text, font: { size: large ? 11 : 10 },
                    callback: (v) => fmt(v) },
           grid: { color: COLORS.grid }
@@ -826,49 +931,100 @@ function externalTooltipHandler(context) {
   tooltipEl.style.top = rect.top + tooltip.caretY + 'px';
 }
 
-/* ===== 大图模态框 ===== */
-let modalChart = null;
-const modalEl = document.getElementById('modal');
-const modalCanvas = document.getElementById('m-canvas');
-let modalMetric = null;
-let modalRecords = [];
+/* ===== 公共 Modal 组件 =====
+   统一 overlay 结构 + close 按钮 + 遮罩点击 + Esc 关闭。
+   title/stats/middle/body 由调用方配置。 */
+function createModal({title = '', stats = '', middle = false} = {}) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="head">
+        <div class="m-head-left">
+          <div class="title"><span class="tname">${title}</span><span class="unit"></span></div>
+          <div class="stats">${stats}</div>
+        </div>
+        ${middle ? '<div class="modal-middle"></div>' : ''}
+        <button class="close" type="button" title="关闭 (Esc)">✕</button>
+      </div>
+      <div class="modal-body"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.classList.remove('open');
+  overlay.querySelector('.close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  return {
+    el: overlay,
+    body: overlay.querySelector('.modal-body'),
+    titleEl: overlay.querySelector('.title'),
+    tnameEl: overlay.querySelector('.tname'),
+    unitEl: overlay.querySelector('.unit'),
+    statsEl: overlay.querySelector('.stats'),
+    middleEl: overlay.querySelector('.modal-middle'),
+    isOpen: () => overlay.classList.contains('open'),
+    open: () => overlay.classList.add('open'),
+    close,
+  };
+}
+
+// 所有 modal 实例(统一 Esc 关闭)
+const modals = [];
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') modals.forEach(m => { if (m.isOpen()) m.close(); });
+});
+
+/* ===== 大图 modal ===== */
+const chartModal = createModal({middle: true});
+const modalTimeField = document.createElement('div');
+modalTimeField.className = 'field';
+modalTimeField.innerHTML = '<span class="field-label">时间</span>';
+modalTimeField.appendChild(modalPicker.el);
+chartModal.middleEl.appendChild(modalTimeField);
+chartModal.body.innerHTML = '<canvas></canvas>';
+const modalCanvas = chartModal.body.querySelector('canvas');
+let modalChart = null, modalMetric = null, modalRecords = [];
 
 function openModal(metric) {
   modalMetric = metric;
-  // 大图基于当前用户的全部记录(不受主时间过滤限制,便于自由探索)
   modalRecords = (currentUser !== null)
     ? DATA.records.filter(r => r.user_key === currentUser)
     : DATA.records;
   modalPicker.setRecordsBounds(modalRecords);
-  document.getElementById('m-title').firstChild.textContent = metric.name;
-  document.getElementById('m-unit').textContent = metric.unit ? `(${metric.unit})` : '';
+  chartModal.tnameEl.textContent = metric.name;
+  chartModal.unitEl.textContent = metric.unit ? `(${metric.unit})` : '';
   if (modalChart) { modalChart.destroy(); modalChart = null; }
-  modalEl.classList.add('open');
+  chartModal.open();
   requestAnimationFrame(drawModal);
 }
-
-// 按大图时间范围过滤+聚合+重画
 function drawModal() {
   const s = modalPicker.getState();
   const recs = filterByRange(modalRecords, s.start, s.end);
-  const pairs = aggregateByDay(modalMetric, recs);
-  const stats = computeStats(pairs);
-  document.getElementById('m-stats').innerHTML = statsHtml(stats, true);
+  const {pairs, stats} = computeSeries(modalMetric, recs);
+  chartModal.statsEl.innerHTML = statsHtml(stats, true);
   if (modalChart) modalChart.destroy();
   modalChart = makeChart(modalCanvas, modalMetric, pairs, true);
 }
-
 function closeModal() {
-  modalEl.classList.remove('open');
+  chartModal.close();
   modalPicker.close();
   if (modalChart) { modalChart.destroy(); modalChart = null; }
 }
 
-document.getElementById('m-close').addEventListener('click', closeModal);
-modalEl.addEventListener('click', (e) => { if (e.target === modalEl) closeModal(); });
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && modalEl.classList.contains('open')) closeModal();
+/* ===== 文本 modal(导出 LLM) ===== */
+const textModal = createModal({title: '导出给 LLM', stats: 'Markdown 文本,可直接复制粘贴到 LLM 对话'});
+textModal.body.innerHTML = `
+  <textarea id="tm-text" readonly></textarea>
+  <div class="tm-actions"><button class="sel" id="tm-copy" type="button">复制全部</button></div>`;
+document.getElementById('tm-copy').addEventListener('click', async (e) => {
+  const t = document.getElementById('tm-text');
+  try { await navigator.clipboard.writeText(t.value); }
+  catch (_) { t.select(); document.execCommand('copy'); }
+  const btn = e.currentTarget, orig = btn.textContent;
+  btn.textContent = '已复制 ✓';
+  setTimeout(() => btn.textContent = orig, 1500);
 });
+
+modals.push(chartModal, textModal);
 
 init();
 </script>
