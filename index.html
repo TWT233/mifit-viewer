@@ -208,8 +208,9 @@
     padding: 10px; margin-bottom: 10px;
     background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
   }
-  .ec-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-  .ec-group-title { color: var(--accent); font-size: 11px; font-weight: 600; margin-right: 4px; cursor: pointer; user-select: none; white-space: nowrap; }
+  .ec-group { display: flex; flex-direction: column; gap: 4px; }
+  .ec-labels { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .ec-group-title { color: var(--accent); font-size: 11px; font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }
   .ec-group-title:hover { color: var(--text); }
   .ec-group label { font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
   .ec-group input { accent-color: var(--accent); }
@@ -651,8 +652,8 @@ function renderExportCols() {
   if (pinnedMetrics.length) {
     const g = document.createElement('div');
     g.className = 'ec-group';
-    g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">★ 看板</div>` +
-      pinnedMetrics.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('');
+    g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">★ 看板</div><div class="ec-labels">` +
+      pinnedMetrics.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('') + `</div>`;
     g.querySelector('.ec-group-title').addEventListener('click', () => {
       const cbs = g.querySelectorAll('input');
       const allOn = [...cbs].every(cb => cb.checked);
@@ -664,8 +665,8 @@ function renderExportCols() {
   for (const [group, ms] of Object.entries(DATA.groups)) {
     const g = document.createElement('div');
     g.className = 'ec-group';
-    g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">${group}</div>` +
-      ms.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('');
+    g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">${group}</div><div class="ec-labels">` +
+      ms.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('') + `</div>`;
     g.querySelector('.ec-group-title').addEventListener('click', () => {
       const cbs = g.querySelectorAll('input');
       const allOn = [...cbs].every(cb => cb.checked);
