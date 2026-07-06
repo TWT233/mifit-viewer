@@ -698,15 +698,12 @@ function regenerateExport() {
   md += `- 用户数: ${Object.keys(byUser).length}  ·  原始记录: ${records.length} 条\n`;
   md += `- 数据按天聚合(同一天多次测量取日均),无测量的天该格为空\n\n`;
 
-  md += '## 字段说明\n\n| key | 名称 | 单位 | 分组 |\n|---|---|---|---|\n';
-  for (const m of selMetrics) md += `| ${m.key} | ${m.name} | ${m.unit || '-'} | ${m.group} |\n`;
-  md += '\n';
-
+  const headers = selMetrics.map(m => m.name + (m.unit ? `(${m.unit})` : ''));
   for (const [uk, recs] of Object.entries(byUser)) {
     const u = DATA.users.find(x => x.user_key === uk);
     md += `## ${u ? u.label : uk}\n\n`;
     const daily = aggregateAllByDay(recs);
-    md += `| 日期 |${selMetrics.map(m => m.name).join('|')}|\n|---|${selMetrics.map(() => '---').join('|')}|\n`;
+    md += `| 日期 |${headers.join('|')}|\n|---|${selMetrics.map(() => '---').join('|')}|\n`;
     for (const row of daily) {
       md += `| ${row.date} |${selMetrics.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
     }
