@@ -690,25 +690,18 @@ function regenerateExport() {
   if (!records.length) { document.getElementById('tm-text').value = '当前筛选无数据'; return; }
   const sel = new Set([...document.querySelectorAll('#ec-box input:checked')].map(cb => cb.dataset.key));
   const selMetrics = METRICS.filter(m => sel.has(m.key));
-  const byUser = {};
-  for (const r of records) (byUser[r.user_key] = byUser[r.user_key] || []).push(r);
 
   let md = '# 体脂秤数据分析\n\n';
   md += `- 数据范围: ${records[0].date.slice(0,10)} ~ ${records[records.length-1].date.slice(0,10)}\n`;
-  md += `- 用户数: ${Object.keys(byUser).length}  ·  原始记录: ${records.length} 条\n`;
+  md += `- 原始记录: ${records.length} 条(已按当前选中用户过滤)\n`;
   md += `- 数据按天聚合(同一天多次测量取日均),无测量的天该格为空\n\n`;
 
   const headers = selMetrics.map(m => m.name + (m.unit ? `(${m.unit})` : ''));
-  const userEntries = Object.entries(byUser);
-  userEntries.forEach(([uk, recs], idx) => {
-    if (userEntries.length > 1) md += `## 用户${idx + 1}\n\n`;
-    const daily = aggregateAllByDay(recs);
-    md += `| 日期 |${headers.join('|')}|\n|---|${selMetrics.map(() => '---').join('|')}|\n`;
-    for (const row of daily) {
-      md += `| ${row.date} |${selMetrics.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
-    }
-    md += '\n';
-  });
+  const daily = aggregateAllByDay(records);
+  md += `| 日期 |${headers.join('|')}|\n|---|${selMetrics.map(() => '---').join('|')}|\n`;
+  for (const row of daily) {
+    md += `| ${row.date} |${selMetrics.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
+  }
   document.getElementById('tm-text').value = md;
 }
 function exportLLM() {
