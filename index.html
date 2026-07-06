@@ -702,19 +702,15 @@ function regenerateExport() {
   for (const m of selMetrics) md += `| ${m.key} | ${m.name} | ${m.unit || '-'} | ${m.group} |\n`;
   md += '\n';
 
-  const groups = {};
-  for (const m of selMetrics) (groups[m.group] = groups[m.group] || []).push(m);
   for (const [uk, recs] of Object.entries(byUser)) {
     const u = DATA.users.find(x => x.user_key === uk);
     md += `## ${u ? u.label : uk}\n\n`;
     const daily = aggregateAllByDay(recs);
-    for (const [groupName, ms] of Object.entries(groups)) {
-      md += `### ${groupName}\n\n| 日期 |${ms.map(m => m.name).join('|')}|\n|---|${ms.map(()=>'---').join('|')}|\n`;
-      for (const row of daily) {
-        md += `| ${row.date} |${ms.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
-      }
-      md += '\n';
+    md += `| 日期 |${selMetrics.map(m => m.name).join('|')}|\n|---|${selMetrics.map(() => '---').join('|')}|\n`;
+    for (const row of daily) {
+      md += `| ${row.date} |${selMetrics.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
     }
+    md += '\n';
   }
   document.getElementById('tm-text').value = md;
 }
