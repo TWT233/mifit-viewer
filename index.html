@@ -374,15 +374,15 @@ async function loadFromHandle(handle) {
   }
 }
 async function onFileBtnClick() {
-  // 优先尝试恢复上次文件(需用户手势触发 requestPermission)
-  if (lastHandle) {
+  // 仅未加载时尝试恢复上次文件(需用户手势 requestPermission);已加载则直接换文件
+  if (!DATA && lastHandle) {
     try {
       if (await lastHandle.requestPermission({mode:'read'}) === 'granted') {
         await loadFromHandle(lastHandle); return;
       }
     } catch(e) { await clearLastFile(); }
   }
-  // File System Access API 选文件并保存句柄
+  // 打开选择器选新文件(File System Access API,保存句柄)
   if (window.showOpenFilePicker) {
     try {
       const [handle] = await window.showOpenFilePicker({
