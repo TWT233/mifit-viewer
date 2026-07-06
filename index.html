@@ -635,31 +635,54 @@ function aggregateAllByDay(records) {
   });
 }
 function saveExportCols() {
-  const keys = [...document.querySelectorAll('#ec-box input:checked')].map(cb => cb.dataset.key);
-  localStorage.setItem('mifit_export_cols', JSON.stringify(keys));
+  const keys = new Set([...document.querySelectorAll('#ec-box input:checked')].map(cb => cb.dataset.key));
+  localStorage.setItem('mifit_export_cols', JSON.stringify([...keys]));
 }
 function renderExportCols() {
   const savedRaw = localStorage.getItem('mifit_export_cols');
   const saved = savedRaw ? new Set(JSON.parse(savedRaw)) : null;  // 无存储默认全选
+  const checkedAttr = key => saved ? (saved.has(key) ? 'checked' : '') : 'checked';
+  const metricByKey = k => METRICS.find(m => m.key === k);
   const box = document.getElementById('ec-box');
   box.innerHTML = '';
+  // 看板分组:当前收藏的指标(与量纲分组同 key 联动)
+  const pinnedMetrics = pinned.map(metricByKey).filter(Boolean);
+  if (pinnedMetrics.length) {
+    const g = document.createElement('div');
+    g.className = 'ec-group';
+    g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">★ 看板</div>` +
+      pinnedMetrics.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('');
+    g.querySelector('.ec-group-title').addEventListener('click', () => {
+      const cbs = g.querySelectorAll('input');
+      const allOn = [...cbs].every(cb => cb.checked);
+      cbs.forEach(cb => { cb.checked = !allOn; syncSameKey(box, cb); });
+      saveExportCols(); regenerateExport();
+    });
+    box.appendChild(g);
+  }
   for (const [group, ms] of Object.entries(DATA.groups)) {
     const g = document.createElement('div');
     g.className = 'ec-group';
     g.innerHTML = `<div class="ec-group-title" title="点击全选/反选本组">${group}</div>` +
-      ms.map(m => `<label><input type="checkbox" data-key="${m.key}" ${saved ? (saved.has(m.key) ? 'checked' : '') : 'checked'}>${m.name}</label>`).join('');
-    // 点击组标题:全选↔全不选
+      ms.map(m => `<label><input type="checkbox" data-key="${m.key}" ${checkedAttr(m.key)}>${m.name}</label>`).join('');
     g.querySelector('.ec-group-title').addEventListener('click', () => {
       const cbs = g.querySelectorAll('input');
       const allOn = [...cbs].every(cb => cb.checked);
-      cbs.forEach(cb => cb.checked = !allOn);
+      cbs.forEach(cb => { cb.checked = !allOn; syncSameKey(box, cb); });
       saveExportCols(); regenerateExport();
     });
     box.appendChild(g);
   }
   box.querySelectorAll('input').forEach(cb => cb.addEventListener('change', () => {
+    syncSameKey(box, cb);  // 同 key 联动(看板↔量纲)
     saveExportCols(); regenerateExport();
   }));
+}
+// 同步同 key 的其他 checkbox 状态
+function syncSameKey(box, cb) {
+  box.querySelectorAll(`input[data-key="${cb.dataset.key}"]`).forEach(other => {
+    if (other !== cb) other.checked = cb.checked;
+  });
 }
 function regenerateExport() {
   const records = filteredRecords();
