@@ -231,9 +231,6 @@
     <div class="field">
       <button id="export-btn" class="sel" type="button" title="导出 Markdown 给 LLM 分析">导出 LLM</button>
     </div>
-    <div class="field">
-      <button id="organize-btn" class="sel" type="button" title="选 data 目录,体脂秤 CSV 提到根、其余归档 archive/">整理 data</button>
-    </div>
   </div>
 </header>
 <div class="dashboard" id="dashboard" style="display:none">
@@ -591,7 +588,6 @@ async function init() {
     e.target.value = '';
   });
   document.getElementById('export-btn').addEventListener('click', exportLLM);
-  document.getElementById('organize-btn').addEventListener('click', organizeDataDirUI);
   // 恢复上次文件:同会话刷新可自动加载,跨会话需点按钮授权
   lastHandle = await IDB.get('fileHandle');
   if (lastHandle) {
@@ -658,67 +654,6 @@ function exportLLM() {
   }
   document.getElementById('tm-text').value = md;
   textModal.open();
-}
-
-// ===== data 目录整理(File System Access API,需 Chrome/Edge) =====
-async function isScaleCsvHandle(fh) {
-  try {
-    const file = await fh.getFile();
-    const header = (await file.slice(0, 500).text()).split(/\r?\n/)[0];
-    return ['weight', 'bfp', 'time', 'bmi'].every(c => header.includes(c));
-  } catch { return false; }
-}
-async function dirHas(dir, name) {
-  try { await dir.getFileHandle(name); return true; } catch {}
-  try { await dir.getDirectoryHandle(name); return true; } catch {}
-  return false;
-}
-async function moveUnique(destDir, handle, name) {
-  const dot = name.lastIndexOf('.');
-  const stem = dot > 0 ? name.slice(0, dot) : name;
-  const ext = dot > 0 ? name.slice(dot) : '';
-  let dst = name, i = 1;
-  while (await dirHas(destDir, dst)) { dst = `${stem}_${i}${ext}`; i++; }
-  await handle.move(destDir, dst);  // Chrome 111+
-}
-async function organizeDataDir(dir) {
-  const archive = await dir.getDirectoryHandle('archive', {create: true});
-  // 1. 递归找所有体脂秤 CSV
-  const scaleFiles = [];
-  async function walk(d) {
-    for await (const [name, h] of d.entries()) {
-      if (name === 'archive') continue;
-      if (h.kind === 'directory') await walk(h);
-      else if (name.endsWith('.csv') && await isScaleCsvHandle(h)) scaleFiles.push({h, name, parent: d});
-    }
-  }
-  await walk(dir);
-  // 2. 体脂秤 CSV 提到根(已在根的跳过)
-  let moved = 0;
-  for (const f of scaleFiles) {
-    if (f.parent === dir) { moved++; continue; }
-    await moveUnique(dir, f.h, f.name); moved++;
-  }
-  // 3. 顶层其余项(非 archive、非体脂秤 CSV)归档
-  let archived = 0;
-  for await (const [name, h] of dir.entries()) {
-    if (name === 'archive') continue;
-    if (h.kind === 'file' && name.endsWith('.csv') && await isScaleCsvHandle(h)) continue;
-    await moveUnique(archive, h, name); archived++;
-  }
-  return {moved, archived};
-}
-async function organizeDataDirUI() {
-  if (!window.showDirectoryPicker) { alert('浏览器不支持目录选择(需 Chrome/Edge)'); return; }
-  let dir;
-  try { dir = await window.showDirectoryPicker({mode: 'readwrite'}); }
-  catch (e) { return; }  // 用户取消
-  try {
-    const {moved, archived} = await organizeDataDir(dir);
-    alert(`整理完成: ${moved} 个体脂秤 CSV 在根目录, ${archived} 项归档到 archive/`);
-  } catch (e) {
-    alert('整理失败: ' + e.message + '\n(需 Chrome/Edge 111+,且授权读写)');
-  }
 }
 
 function buildUserSelect() {
