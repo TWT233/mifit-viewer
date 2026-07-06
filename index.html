@@ -693,7 +693,6 @@ function regenerateExport() {
 
   let md = '# 体脂秤数据分析\n\n';
   md += `- 数据范围: ${records[0].date.slice(0,10)} ~ ${records[records.length-1].date.slice(0,10)}\n`;
-  md += `- 原始记录: ${records.length} 条(已按当前选中用户过滤)\n`;
   md += `- 数据按天聚合(同一天多次测量取日均),无测量的天该格为空\n\n`;
 
   const headers = selMetrics.map(m => m.name + (m.unit ? `(${m.unit})` : ''));
