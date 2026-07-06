@@ -202,15 +202,15 @@
   .tm-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
   .tm-actions .sel { cursor: pointer; }
   .export-cols {
-    display: flex; flex-wrap: wrap; gap: 14px;
-    max-height: 180px; overflow: auto;
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 220px; overflow: auto;
     padding: 10px; margin-bottom: 10px;
     background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
   }
-  .ec-group { display: flex; flex-direction: column; gap: 3px; min-width: 130px; }
-  .ec-group-title { color: var(--accent); font-size: 11px; font-weight: 600; margin-bottom: 2px; cursor: pointer; user-select: none; }
+  .ec-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  .ec-group-title { color: var(--accent); font-size: 11px; font-weight: 600; margin-right: 4px; cursor: pointer; user-select: none; white-space: nowrap; }
   .ec-group-title:hover { color: var(--text); }
-  .ec-group label { font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .ec-group label { font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
   .ec-group input { accent-color: var(--accent); }
 </style>
 </head>
