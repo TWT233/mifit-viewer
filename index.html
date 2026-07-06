@@ -191,15 +191,17 @@
   .modal-middle { margin-left: auto; }
   .modal .body { padding: 16px 20px 20px; overflow: auto; }
   .modal canvas { height: 560px !important; max-height: calc(100vh - 220px); }
+  .modal-body:has(#tm-text) { display: flex; flex-direction: column; }
   #tm-text {
-    width: 100%; height: calc(100vh - 240px); min-height: 320px;
+    width: 100%; flex: 1 1 auto; min-height: 180px;
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
     padding: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 12px; line-height: 1.5; resize: none;
   }
   #tm-text:focus { outline: none; border-color: var(--accent); }
-  .tm-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .export-cols { flex-shrink: 0; }
+  .tm-actions { flex-shrink: 0; display: flex; justify-content: flex-end; margin-top: 10px; }
   .tm-actions .sel { cursor: pointer; }
   .export-cols {
     display: flex; flex-direction: column; gap: 8px;
