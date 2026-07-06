@@ -201,6 +201,16 @@
   #tm-text:focus { outline: none; border-color: var(--accent); }
   .tm-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
   .tm-actions .sel { cursor: pointer; }
+  .export-cols {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    max-height: 180px; overflow: auto;
+    padding: 10px; margin-bottom: 10px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .ec-group { display: flex; flex-direction: column; gap: 3px; min-width: 130px; }
+  .ec-group-title { color: var(--accent); font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .ec-group label { font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .ec-group input { accent-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -623,10 +633,23 @@ function aggregateAllByDay(records) {
     return row;
   });
 }
-function exportLLM() {
-  if (!DATA) { alert('请先打开 CSV'); return; }
+function renderExportCols() {
+  const box = document.getElementById('ec-box');
+  box.innerHTML = '';
+  for (const [group, ms] of Object.entries(DATA.groups)) {
+    const g = document.createElement('div');
+    g.className = 'ec-group';
+    g.innerHTML = `<div class="ec-group-title">${group}</div>` +
+      ms.map(m => `<label><input type="checkbox" data-key="${m.key}" checked>${m.name}</label>`).join('');
+    box.appendChild(g);
+  }
+  box.querySelectorAll('input').forEach(cb => cb.addEventListener('change', regenerateExport));
+}
+function regenerateExport() {
   const records = filteredRecords();
-  if (!records.length) { alert('当前筛选无数据'); return; }
+  if (!records.length) { document.getElementById('tm-text').value = '当前筛选无数据'; return; }
+  const sel = new Set([...document.querySelectorAll('#ec-box input:checked')].map(cb => cb.dataset.key));
+  const selMetrics = METRICS.filter(m => sel.has(m.key));
   const byUser = {};
   for (const r of records) (byUser[r.user_key] = byUser[r.user_key] || []).push(r);
 
@@ -636,15 +659,16 @@ function exportLLM() {
   md += `- 数据按天聚合(同一天多次测量取日均),无测量的天该格为空\n\n`;
 
   md += '## 字段说明\n\n| key | 名称 | 单位 | 分组 |\n|---|---|---|---|\n';
-  for (const m of METRICS) md += `| ${m.key} | ${m.name} | ${m.unit || '-'} | ${m.group} |\n`;
+  for (const m of selMetrics) md += `| ${m.key} | ${m.name} | ${m.unit || '-'} | ${m.group} |\n`;
   md += '\n';
 
+  const groups = {};
+  for (const m of selMetrics) (groups[m.group] = groups[m.group] || []).push(m);
   for (const [uk, recs] of Object.entries(byUser)) {
     const u = DATA.users.find(x => x.user_key === uk);
     md += `## ${u ? u.label : uk}\n\n`;
     const daily = aggregateAllByDay(recs);
-    for (const groupName of Object.keys(DATA.groups)) {
-      const ms = METRICS.filter(m => m.group === groupName);
+    for (const [groupName, ms] of Object.entries(groups)) {
       md += `### ${groupName}\n\n| 日期 |${ms.map(m => m.name).join('|')}|\n|---|${ms.map(()=>'---').join('|')}|\n`;
       for (const row of daily) {
         md += `| ${row.date} |${ms.map(m => row[m.key] == null ? '-' : fmt(row[m.key])).join('|')}|\n`;
@@ -653,6 +677,11 @@ function exportLLM() {
     }
   }
   document.getElementById('tm-text').value = md;
+}
+function exportLLM() {
+  if (!DATA) { alert('请先打开 CSV'); return; }
+  renderExportCols();
+  regenerateExport();
   textModal.open();
 }
 
@@ -1012,8 +1041,9 @@ function closeModal() {
 }
 
 /* ===== 文本 modal(导出 LLM) ===== */
-const textModal = createModal({title: '导出给 LLM', stats: 'Markdown 文本,可直接复制粘贴到 LLM 对话'});
+const textModal = createModal({title: '导出给 LLM', stats: '勾选要导出的列,Markdown 可直接复制粘贴到 LLM 对话'});
 textModal.body.innerHTML = `
+  <div class="export-cols" id="ec-box"></div>
   <textarea id="tm-text" readonly></textarea>
   <div class="tm-actions"><button class="sel" id="tm-copy" type="button">复制全部</button></div>`;
 document.getElementById('tm-copy').addEventListener('click', async (e) => {
