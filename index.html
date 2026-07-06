@@ -201,8 +201,7 @@
   }
   #tm-text:focus { outline: none; border-color: var(--accent); }
   .export-cols { flex-shrink: 0; }
-  .tm-actions { flex-shrink: 0; display: flex; justify-content: flex-end; margin-top: 10px; }
-  .tm-actions .sel { cursor: pointer; }
+  .modal-middle .sel { cursor: pointer; }
   .export-cols {
     display: flex; flex-direction: column; gap: 8px;
     max-height: 220px; overflow: auto;
@@ -1085,8 +1084,8 @@ function closeModal() {
 const textModal = createModal({title: '导出给 LLM', stats: '勾选要导出的列,Markdown 可直接复制粘贴到 LLM 对话'});
 textModal.body.innerHTML = `
   <div class="export-cols" id="ec-box"></div>
-  <textarea id="tm-text" readonly></textarea>
-  <div class="tm-actions"><button class="sel" id="tm-copy" type="button">复制全部</button></div>`;
+  <textarea id="tm-text" readonly></textarea>`;
+textModal.middleEl.innerHTML = '<button class="sel" id="tm-copy" type="button" title="复制全部 Markdown">复制全部</button>';
 document.getElementById('tm-copy').addEventListener('click', async (e) => {
   const t = document.getElementById('tm-text');
   try { await navigator.clipboard.writeText(t.value); }
